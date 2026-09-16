@@ -1,5 +1,19 @@
 # Baseline Predictive Pipeline -- ETAI
 
+20231707 - Filipe Caçador
+
+Week 2
+LogisticRegression: Train accuracy: 0.679
+                    Test accuracy:  0.680
+                    F1_score: 0: 0.72
+                              1: 0.63
+
+Decision: Train accuracy: 0.679
+          Test accuracy:  0.669
+                    F1_score: 0: 0.69
+                              1: 0.64
+
+
 This is the **starting point** for your semester project: a small but *complete* predictive pipeline -- every piece a real project needs (entry point, config, data loading, preprocessing, model, evaluation), just kept as simple as possible for now.
 
 The task: predict two-year recidivism using ProPublica's COMPAS
