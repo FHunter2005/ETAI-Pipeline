@@ -13,6 +13,17 @@ Decision: Train accuracy: 0.679
                     F1_score: 0: 0.69
                               1: 0.64
 
+Week 3
+LogisticRegression: Train accuracy: 0.673
+                    Test accuracy:  0.665
+                    F1_score: 0: 0.67
+                              1: 0.66
+
+Decision: Train accuracy: 0.684
+          Test accuracy:  0.665
+                    F1_score: 0: 0.66
+                              1: 0.67
+
 
 This is the **starting point** for your semester project: a small but *complete* predictive pipeline -- every piece a real project needs (entry point, config, data loading, preprocessing, model, evaluation), just kept as simple as possible for now.
 
