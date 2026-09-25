@@ -17,6 +17,7 @@ from src.preprocessing import clean_dataset, split_features_target, build_prepro
 from src.model import build_model
 from src.evaluate import evaluate, fairness_report
 from src.results import save_run
+from sklearn.model_selection import cross_validate
 
 
 def load_config(path: str = "config.yaml") -> dict:
@@ -49,6 +50,17 @@ def main():
         ("prep", preprocessor),
         ("model", build_model(config["model"])),
     ])
+    cv_results = cross_validate(pipeline, X_train, y_train, cv=5, return_train_score=True)
+    cv_train_acc = cv_results['train_score'].mean()
+    cv_val_acc = cv_results['test_score'].mean()
+
+    cv_report = (
+        f"--- Cross-Validation (5 Folds) ---\n"
+        f"CV Train accuracy (mean): {cv_train_acc:.3f}\n"
+        f"CV Validation accuracy (mean): {cv_val_acc:.3f}\n"
+        f"----------------------------------\n\n"
+    )
+    print(cv_report)
     pipeline.fit(X_train, y_train)
 
     # predict on both splits -- train accuracy vs. test accuracy is how we'll spot overfitting, not just how "good" the model looks

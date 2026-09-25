@@ -2,7 +2,7 @@ import numpy as np
 import pandas as pd
 from sklearn.compose import ColumnTransformer
 from sklearn.pipeline import Pipeline
-from sklearn.impute import SimpleImputer
+from sklearn.impute import SimpleImputer, KNNImputer
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import OneHotEncoder, OrdinalEncoder, StandardScaler, MinMaxScaler, RobustScaler
 from category_encoders import CountEncoder, TargetEncoder
@@ -36,7 +36,12 @@ def clean_dataset(df: pd.DataFrame, diagnostics_config: dict) -> pd.DataFrame:
         if col in out.columns:
             out[col] = pd.to_numeric(out[col].replace(list(placeholder_tokens), np.nan), errors="coerce")
 
-    flag_invalid_values(out, diagnostics_config.get("validity_rules", {}))
+    invalid_report = flag_invalid_values(out, diagnostics_config.get("validity_rules", {}))
+    # Imprime o relatório caso tenham sido encontradas violações
+    if not invalid_report.empty and invalid_report['violations'].sum() > 0:
+        print("\n--- Relatório de Valores Inválidos Encontrados ---")
+        print(invalid_report.to_string(index=False))
+
 
     out = _canonicalize_categories(out, diagnostics_config.get("canonical_categories", {}), placeholder_tokens)
 
@@ -112,7 +117,7 @@ def build_preprocessor(preprocessing_config: dict) -> ColumnTransformer:
     encoder = _ENCODERS[encoder_name]()
 
     numeric_pipeline = Pipeline([
-        ("impute", SimpleImputer(strategy=imputation.get("numeric_strategy", "median"))),
+        ("impute", KNNImputer(n_neighbors=5)),
         ("scale", scaler),
     ])
     categorical_pipeline = Pipeline([

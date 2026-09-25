@@ -44,9 +44,7 @@ diagnostics:
       low: "Low"
       medium: "Medium"
       high: "High"
-  # multicollinearity casualties (see the EDA notebook's correlation heatmap + VIF section) --
-  # also listed in data.drop_columns above; kept here too so preprocessing.py doesn't need
-  # to reach into the data: section to know what to drop
+# multicollinearity casualties (see the EDA notebook's correlation heatmap + VIF section)
   redundant_columns: ["prior_offenses", "age_in_months", "juvenile_total"]
 
 preprocessing:
@@ -60,10 +58,11 @@ preprocessing:
     categorical_strategy: "most_frequent"   # applies to sex, age_cat, c_charge_degree
 
 model:
-  type: "logistic_regression"   # or "decision_tree"
+  type: "decision_tree"   # or "decision_tree"
   params:
-    max_iter: 1000
-
+    max_depth: 5
+    min_samples_split: 10
+    min_samples_leaf: 5
 
 output:
   results_dir: "results"   # each run's full report is saved here as a timestamped .txt file
