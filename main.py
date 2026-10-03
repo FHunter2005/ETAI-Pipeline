@@ -31,9 +31,10 @@ def main():
     df_raw = load_data(config["data"]["path"])
     df_clean = clean_dataset(df_raw, config["diagnostics"])
     print(f"clean_dataset:       {df_raw.shape} -> {df_clean.shape}   (same rows, same order: {df_clean.index.equals(df_raw.index)})")
-    df_clean = drop_duplicate_rows(df_clean, config["diagnostics"]["id_column"])
-    print(f"drop_duplicate_rows: -> {df_clean.shape}   ({len(df_raw) - len(df_clean)} duplicate rows removed -- training data only)")
-    df_clean.isna().sum().to_frame("missing after cleaning").T
+    
+    print("\nMissing values after cleaning:")
+    print(df_clean.isna().sum().to_frame("missing after cleaning").T)
+    print("\n")
 
     mnar_sources = config["preprocessing"].get("mnar_indicator_sources", [])
     X, y, extras = split_features_target(df_clean, config["data"], mnar_sources)
@@ -46,6 +47,14 @@ def main():
         test_size=config["split"]["test_size"],
         random_state=config["split"]["random_state"],
     )
+
+    X_train_clean = drop_duplicate_rows(X_train, config["diagnostics"]["id_column"])
+    print(f"drop_duplicate_rows: -> {X_train_clean.shape}   ({len(X_train) - len(X_train_clean)} duplicate rows removed -- training data only)")
+
+    y_train = y_train.loc[X_train_clean.index]
+    extras_train = extras_train.loc[X_train_clean.index]
+
+    X_train = X_train_clean
 
     preprocessor = build_preprocessor(config["preprocessing"])
     pipeline = Pipeline([

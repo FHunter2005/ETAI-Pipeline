@@ -143,8 +143,8 @@ def build_preprocessor(preprocessing_config: dict) -> ColumnTransformer:
     encoder = _ENCODERS[encoder_name]()
 
     numeric_pipeline = Pipeline([
-        ("impute", KNNImputer(n_neighbors=5)),
         ("scale", scaler),
+        ("impute", KNNImputer(n_neighbors=5, weights="uniform")),
     ])
     categorical_pipeline = Pipeline([
         ("impute", SimpleImputer(strategy=imputation.get("categorical_strategy", "most_frequent"))),
