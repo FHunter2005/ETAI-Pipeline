@@ -49,7 +49,7 @@ diagnostics:
 
 preprocessing:
   encoder: "ordinal"      # winner of the 4x4 empirical grid (onehot/ordinal/count/target x none/standard/minmax/robust),
-  scaler: "none"     # scored on accuracy across 15 repeated splits -- see 02_preprocessing.ipynb's grid + paired check
+  scaler: "robust"     # scored on accuracy across 15 repeated splits -- see 02_preprocessing.ipynb's grid + paired check
   numeric_features: ["age", "juv_fel_count", "juv_misd_count", "juv_other_count", "priors_count"]
   categorical_features: ["sex", "age_cat", "c_charge_degree"]
   mnar_indicator_sources: ["priors_count", "c_charge_degree"]
@@ -58,11 +58,10 @@ preprocessing:
     categorical_strategy: "most_frequent"   # applies to sex, age_cat, c_charge_degree
 
 model:
-  type: "decision_tree"   # or "decision_tree"
+  type: "random_forest"   # or "decision_tree"
   params:
+    n_estimators: 100
     max_depth: 5
-    min_samples_split: 10
-    min_samples_leaf: 5
-
+    random_state: 42
 output:
   results_dir: "results"   # each run's full report is saved here as a timestamped .txt file
