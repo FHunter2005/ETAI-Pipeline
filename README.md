@@ -40,6 +40,52 @@ Random Forests: Train accuracy: 0.707
                     F1_score: 0: 0.73
                               1: 0.66
 
+Week 6
+Dummy: Train accuracy: 0.549
+       Test accuracy:  0.549
+                    F1_score: 0: 0.71
+                              1: 0.00
+
+LogisticRegression: Train accuracy: 0.675
+                    Test accuracy:  0.674
+                    F1_score: 0: 0.74
+                              1: 0.57
+
+Decision Tree: Train accuracy: 0.684
+               Test accuracy:  0.676
+                    F1_score: 0: 0.73
+                              1: 0.60
+
+Random Forests: Train accuracy: 0.689
+                Test accuracy:  0.677
+                    F1_score: 0: 0.72
+                              1: 0.61
+
+AdaBoost: Train accuracy: 0.687
+          Test accuracy:  0.679
+                    F1_score: 0: 0.73
+                              1: 0.61
+
+Oblique Random Forests: Train accuracy: 0.689
+                        Test accuracy:  0.680
+                    F1_score: 0: 0.73
+                              1: 0.61
+
+Note on Week 6: "Test accuracy" here is the validation accuracy of nested
+The Week  numbers arelower than Week 4's (e.g. Random Forest 0.700 -> 0.677),
+but this does not mean the models got worse:
+- Week 4 measured "Test accuracy" on a single 80/20 split, on the same test
+  rows that were used to compare models week after week. One split of ~1450
+  rows varies by about +-0.012 from luck alone, and choosing models by it
+  favours whichever happened to score high on those rows.
+- Week 6 averages 5 folds and keeps all tuning inside each fold, so the
+  estimate is honest (tuning optimism measured at +0.001 to +0.004).
+- The data cleaning and features also changed this week (age_cat dropped,
+  juv_fel_count rebuilt from juvenile_total, one-hot encoding).
+All tuned models score within 0.006 of each other, well inside the fold
+standard deviation (~0.013); the corrected paired t-test against Random
+Forest gives p > 0.3 for every model, so none is significantly better.
+
 
 This is the **starting point** for your semester project: a small but *complete* predictive pipeline -- every piece a real project needs (entry point, config, data loading, preprocessing, model, evaluation), just kept as simple as possible for now.
 
