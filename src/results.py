@@ -1,6 +1,6 @@
 """Saving each run's report and fitted model to disk."""
 import os
-from datetime import datetime
+import pandas as pd
 
 import joblib
 
@@ -13,15 +13,15 @@ def save_scores(path: str, row: dict) -> pd.DataFrame:
     runs.to_csv(path, index=False)
     return runs
 
-def save_run(results_dir: str, config: dict, report_text: str, model=None):
+def save_run(results_dir: str, run: str, config: dict, report_text: str, model=None) -> str:
     """
-    Writes the run's settings and full report to `results_dir/run_<timestamp>.txt` and, if
-    given, the fitted `model` to `results_dir/model_<timestamp>.joblib` (the folder is created
-    if needed). Returns (report_path, model_path); model_path is None without a model.
+    Writes the run's settings and full report to `results_dir/run_<run>.txt` and, if given,
+    the fitted `model` to `results_dir/model_<run>.joblib` (the folder is created if needed).
+    `run` is the run id (a timestamp), shared with the scoreboard row. Returns the report path.
     """
     os.makedirs(results_dir, exist_ok=True)
 
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    timestamp = run
     path = os.path.join(results_dir, f"run_{timestamp}.txt")
 
     cv = config["cv"]
@@ -34,7 +34,7 @@ def save_run(results_dir: str, config: dict, report_text: str, model=None):
         f"Preprocessing: encoder={config['preprocessing']['encoder']}  "
         f"scaler={config['preprocessing']['scaler']}\n"
         f"CV: {cv['n_splits']} stratified folds  shuffle={cv.get('shuffle', True)}  "
-        f"random_state={cv.get('random_state')}  metric={cv.get('scoring', 'accuracy')}\n"
+        f"random_state={cv.get('random_state')}  metric={cv['selection_metric']}\n"
         f"Tuning: {tuning_line}\n"
         f"Locked test set: size={config['test_set']['size']}  "
         f"random_state={config['test_set']['random_state']}  (not evaluated)\n"
@@ -48,4 +48,4 @@ def save_run(results_dir: str, config: dict, report_text: str, model=None):
     if model is not None:
         model_path = os.path.join(results_dir, f"model_{timestamp}.joblib")
         joblib.dump(model, model_path)
-    return path, model_path
+    return path

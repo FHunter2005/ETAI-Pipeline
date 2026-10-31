@@ -6,51 +6,52 @@ set is never used here.
 import numpy as np
 import pandas as pd
 from scipy import stats
-from sklearn.metrics import classification_report
+from sklearn.metrics import classification_report, fbeta_score, get_scorer, make_scorer
 from sklearn.model_selection import cross_validate
 
 
-def cross_validate_pipeline(pipeline, X, y, cv, scoring: str = "accuracy", n_jobs: int = 1):
+def cross_validate_pipeline(pipeline, X, y, cv, scorers: dict, selection_metric: str, n_jobs: int = 1):
     """
     Fits a fresh copy of `pipeline` (preprocessing included) on each fold's training part and
-    scores it on that fold's validation part.
+    scores it on that fold's validation part with every scorer in `scorers`.
 
-    Returns (fold_scores, y_oof):
-      - fold_scores: one row per fold with the train score, the validation score and their gap;
-      - y_oof: out-of-fold predictions, each row predicted by the fold model that did not
-        train on it, taken from the same fits as the scores. `cv` must be a partition
-        (each row validated exactly once).
+    Returns (fold_scores, oof_proba):
+      - fold_scores: one row per fold with the train and validation `selection_metric` and their
+        gap, plus one validation column per metric;
+      - oof_proba: out-of-fold probabilities of the positive class, each row predicted by the
+        fold model that did not train on it, taken from the same fits as the scores. `cv` must
+        be a partition (each row validated exactly once).
     """
-    scores = cross_validate(pipeline, X, y, cv=cv, scoring=scoring, return_train_score=True,
+    scores = cross_validate(pipeline, X, y, cv=cv, scoring=scorers, return_train_score=True,
                             return_estimator=True, return_indices=True, n_jobs=n_jobs)
     fold_scores = pd.DataFrame({
-        "fold": range(1, len(scores["test_score"]) + 1),
-        "train": scores["train_score"],
-        "validation": scores["test_score"],
+        "fold": range(1, len(scores[f"test_{selection_metric}"]) + 1),
+        "train": scores[f"train_{selection_metric}"],
+        "validation": scores[f"test_{selection_metric}"],
     })
     fold_scores["gap"] = fold_scores["train"] - fold_scores["validation"]
+    for name in scorers:
+        fold_scores[name] = scores[f"test_{name}"]
 
-    y_oof = np.empty(len(X), dtype=np.asarray(y).dtype)
+    oof_proba = np.empty(len(X))
     for model, val_idx in zip(scores["estimator"], scores["indices"]["test"]):
-        y_oof[val_idx] = model.predict(X.iloc[val_idx])
-    return fold_scores, y_oof
+        oof_proba[val_idx] = model.predict_proba(X.iloc[val_idx])[:, 1]
+    return fold_scores, oof_proba
 
 
-def cv_report(fold_scores: pd.DataFrame, scoring: str = "accuracy") -> str:
-    """Per-fold table with mean and std, as text (printed and returned)."""
+def cv_report(fold_scores: pd.DataFrame, metrics: list, selection_metric: str, title: str = "Cross-validation") -> str:
+    """Per-fold table with mean and std of every metric, as text."""
     lines = [
-        f"Cross-validation ({len(fold_scores)} stratified folds, metric: {scoring})",
+        f"{title} ({len(fold_scores)} stratified folds, selection metric: {selection_metric})",
         "",
         fold_scores.to_string(index=False, float_format=lambda v: f"{v:.3f}"),
         "",
     ]
-    for col in ["train", "validation", "gap"]:
+    for col in ["train", "validation", "gap"] + [m for m in metrics if m != selection_metric]:
         sign = "+" if col == "gap" else ""
-        lines.append(f"{col.capitalize():<11s} mean = {fold_scores[col].mean():{sign}.3f}   "
+        lines.append(f"{col:<18s} mean = {fold_scores[col].mean():{sign}.3f}   "
                      f"std = {fold_scores[col].std(ddof=1):.3f}")
-    text = "\n".join(lines)
-    print(text)
-    return text
+    return "\n".join(lines)
 
 
 def corrected_paired_test(scores_a, scores_b, test_train_ratio: float) -> dict:
@@ -71,18 +72,20 @@ def corrected_paired_test(scores_a, scores_b, test_train_ratio: float) -> dict:
     return {"mean_diff": float(diff.mean()), "wins": f"{int((diff > 0).sum())}/{k}", "t": t, "p_value": p_value}
 
 
-def oof_classification_report(y_true, y_pred) -> str:
-    """Classification report on the out-of-fold predictions, as text (printed and returned)."""
-    text = "Classification report (out-of-fold predictions, development set):\n" + \
+def oof_classification_report(y_true, oof_proba, threshold: float = 0.5) -> str:
+    """Classification report on the out-of-fold predictions (proba >= `threshold`), as text (printed and returned)."""
+    y_pred = (np.asarray(oof_proba) >= threshold).astype(int)
+    text = f"Classification report (out-of-fold predictions, threshold {threshold}, development set):\n" + \
         classification_report(y_true, y_pred, zero_division=0)
     print(text)
     return text
 
 
-def fairness_report(y_true, y_pred, extras: pd.DataFrame, sensitive_attr: str = "race") -> str:
+def fairness_report(y_true, oof_proba, extras: pd.DataFrame, sensitive_attr: str = "race",
+                    threshold: float = 0.5) -> str:
     """
     False positive rate (share of people who did not reoffend but were predicted to) per
-    group of `sensitive_attr`, for the model's predictions and for COMPAS's own score
+    group of `sensitive_attr`, for the model's predictions (proba >= `threshold`) and for COMPAS's own score
     ("Medium" or "High" counts as predicted to reoffend), on the same rows; rows whose
     `score_text` is unknown (NaN after cleaning) are left out of COMPAS's rates only.
     Rows with an unknown group are reported as "unknown". A simple check, not a full audit.
@@ -90,7 +93,7 @@ def fairness_report(y_true, y_pred, extras: pd.DataFrame, sensitive_attr: str = 
     df = extras.copy()
     df[sensitive_attr] = df[sensitive_attr].astype(object).fillna("unknown")
     df["y_true"] = pd.Series(y_true).values
-    df["y_pred_model"] = y_pred
+    df["y_pred_model"] = (np.asarray(oof_proba) >= threshold).astype(int)
     df["y_pred_compas"] = df["score_text"].map({"Low": 0, "Medium": 1, "High": 1})
 
     lines = [
@@ -112,6 +115,7 @@ def fairness_report(y_true, y_pred, extras: pd.DataFrame, sensitive_attr: str = 
     text = "\n".join(lines)
     print(text)
     return text
+
 
 def build_scorers(metrics: list) -> dict:
     """

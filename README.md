@@ -86,6 +86,79 @@ All tuned models score within 0.006 of each other, well inside the fold
 standard deviation (~0.013); the corrected paired t-test against Random
 Forest gives p > 0.3 for every model, so none is significantly better.
 
+Week 8
+Dummy: Train ROC_AUC: 0.500
+       Test ROC_AUC:  0.500 +- 0.000
+       Test accuracy: 0.549
+                    F1_score: 0: 0.71
+                              1: 0.00
+
+LogisticRegression: Train ROC_AUC: 0.720
+                    Test ROC_AUC:  0.719 +- 0.014
+                    Test accuracy: 0.669
+                    F1_score: 0: 0.70
+                              1: 0.63
+
+Naive Bayes: Train ROC_AUC: 0.706
+             Test ROC_AUC:  0.705 +- 0.012
+             Test accuracy: 0.621
+                    F1_score: 0: 0.73
+                              1: 0.37
+
+Decision Tree: Train ROC_AUC: 0.732
+               Test ROC_AUC:  0.719 +- 0.013
+               Test accuracy: 0.673
+                    F1_score: 0: 0.71
+                              1: 0.63
+
+Random Forests: Train ROC_AUC: 0.745
+                Test ROC_AUC:  0.726 +- 0.015
+                Test accuracy: 0.673
+                    F1_score: 0: 0.70
+                              1: 0.64
+
+AdaBoost: Train ROC_AUC: 0.741
+          Test ROC_AUC:  0.728 +- 0.015
+          Test accuracy: 0.682
+                    F1_score: 0: 0.73
+                              1: 0.62
+
+Oblique Random Forests: Train ROC_AUC: 0.746
+                        Test ROC_AUC:  0.727 +- 0.015
+                        Test accuracy: 0.681
+                    F1_score: 0: 0.73
+                              1: 0.62
+
+Hist Gradient Boosting: Train ROC_AUC: 0.740
+                        Test ROC_AUC:  0.728 +- 0.016
+                        Test accuracy: 0.677
+                    F1_score: 0: 0.71
+                              1: 0.64
+
+Gradient Boosting: Train ROC_AUC: 0.740
+                   Test ROC_AUC:  0.729 +- 0.015
+                   Test accuracy: 0.682
+                    F1_score: 0: 0.73
+                              1: 0.62
+
+Note on Week 8: ROC AUC is now the selection metric (what tuning maximises
+and runs are ranked by), so "Train" is now train ROC AUC; train accuracy is
+no longer measured. As in Week 6, "Test" is the 5-fold validation score of
+nested CV (Logistic Regression and Dummy are untuned), on the development set
+only; the locked test set is still unused. Accuracy and F1 use a 0.5 threshold.
+- ROC AUC measures how well the model ranks people by risk, at every
+  threshold at once, so it does not depend on the 0.5 cut-off. Accuracy
+  hides this: Naive Bayes has 0.62 accuracy but only 0.24 recall for
+  reoffenders at 0.5 (F1 of 0.37), even though its ranking is close to the others.
+- Every run also reports balanced accuracy, precision, recall, F1, F2 and
+  average precision (see `results/run_*.txt`).
+- New models: Naive Bayes, Gradient Boosting, Hist Gradient Boosting.
+- The five ensembles score within 0.003 ROC AUC of each other. The corrected
+  paired t-test against Gradient Boosting (best, 0.729) gives p > 0.15 for
+  all of them, so none is significantly better. Logistic Regression
+  (-0.010, p = 0.015) and Naive Bayes (-0.023, p = 0.003) are significantly
+  lower; Decision Tree is borderline (-0.010, p = 0.096).
+
 
 This is the **starting point** for your semester project: a small but *complete* predictive pipeline -- every piece a real project needs (entry point, config, data loading, preprocessing, model, evaluation), just kept as simple as possible for now.
 

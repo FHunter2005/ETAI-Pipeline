@@ -33,11 +33,11 @@ def main():
     model_type = config["model"]["type"]
 
     df_raw = load_data(config["data"]["path"])
-    df_clean = clean_dataset(df_raw, config["diagnostics"])
+    df_clean = clean_dataset(df_raw, config["diagnostics"],
+                             config["preprocessing"].get("missing_indicator_sources", []))
     df_clean = drop_duplicate_rows(df_clean, config["diagnostics"].get("id_column"))
 
-    mnar_sources = config["preprocessing"].get("mnar_indicator_sources", [])
-    X, y, extras = split_features_target(df_clean, config["data"], mnar_sources)
+    X, y, extras = split_features_target(df_clean, config["data"])
 
     # From here on, every decision uses the development set only; the test set stays locked.
     X_dev, X_test, y_dev, y_test, extras_dev, extras_test = split_dev_test(
