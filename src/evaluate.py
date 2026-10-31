@@ -112,3 +112,16 @@ def fairness_report(y_true, y_pred, extras: pd.DataFrame, sensitive_attr: str = 
     text = "\n".join(lines)
     print(text)
     return text
+
+def build_scorers(metrics: list) -> dict:
+    """
+    {name: scorer} for scikit-learn metric names (`accuracy`, `roc_auc`, ...), plus `fbeta_<beta>`
+    (e.g. `fbeta_2`: recall weighted twice as much as precision).
+    """
+    scorers = {}
+    for name in metrics:
+        if name.startswith("fbeta_"):
+            scorers[name] = make_scorer(fbeta_score, beta=float(name.split("_", 1)[1]), zero_division=0)
+        else:
+            scorers[name] = get_scorer(name)
+    return scorers

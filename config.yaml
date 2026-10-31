@@ -2,10 +2,7 @@ data:
   path: "data/compas_two_year_recidivism.csv"
   target: "two_year_recid"
   sensitive_attr: "race"                            # never a feature; used only for the fairness report
-  # Kept in the data, never used as features. age_cat is a bucketed copy of age that contradicts
-  # it in 116 rows (110 rows of age 45 tagged "Greater than 45", 6 rows of age 51-66 tagged
-  # "Less than 25"), so age alone carries the information.
-  drop_columns: ["id", "decile_score", "score_text", "age_cat"]
+  drop_columns: ["id", "decile_score", "score_text"]  # kept in the data, never used as features
 
 # Locked test set: never used to fit, tune or choose anything. Do not change once set.
 test_set:
@@ -16,7 +13,9 @@ cv:
   n_splits: 5
   shuffle: true
   random_state: 42
-  scoring: "accuracy"
+  # Reported for every run. fbeta_<beta> weights recall beta times as much as precision.
+  metrics: ["accuracy", "balanced_accuracy", "precision", "recall", "f1", "fbeta_2", "roc_auc", "average_precision"]
+  selection_metric: "roc_auc"                       # one of metrics: what tuning maximises and runs are ranked by
   n_jobs: 1                                         # -1 = all CPU cores
 
 diagnostics:
@@ -25,25 +24,10 @@ diagnostics:
   # "nan" catches real NaNs turned into text by the category cleanup.
   placeholder_tokens: ["-", "?", "n/a", "N/A", "na", "NA", "", "nan"]
   validity_rules:
-    age: {min: 18, max: 100}                        # catches ages 5 and -3
+    age: {min: 18, max: 100}
     decile_score: {min: 1, max: 10}
-    juv_fel_count: {min: 0}                         # catches -1
-    juv_misd_count: {min: 0}
-    juv_other_count: {min: 0}
-    juvenile_total: {min: 0}                        # catches -1, so it never rebuilds a negative count
-    # Real counts stop at 38; the next values are 250 and 500 (sentinel codes, 6 rows). Any cap in
-    # the gap separates them; 60 leaves room above the largest real count.
+    juv_fel_count: {min: 0}
     priors_count: {min: 0, max: 60}
-  # A label must agree with the score it is derived from; a disagreement means one of them is
-  # wrong and we cannot tell which, so the label becomes NaN (10 rows of score_text).
-  band_rules:
-    score_text:
-      score_column: decile_score
-      bands: {Low: [1, 4], Medium: [5, 7], High: [8, 10]}   # COMPAS's own cut-offs
-  # A part missing (or invalid) is rebuilt as total - other parts, before the total is dropped:
-  # recovers all 217 missing juv_fel_count values exactly instead of imputing them.
-  reconstruct_from_total:
-    juv_fel_count: {total: juvenile_total, parts: [juv_misd_count, juv_other_count]}
   canonical_categories:
     sex:
       male: "Male"
@@ -65,39 +49,32 @@ diagnostics:
       low: "Low"
       medium: "Medium"
       high: "High"
-  # Dropped after cleaning. They add nothing: prior_offenses equals priors_count and
-  # age_in_months equals age * 12, and each is missing in exactly the same rows as its twin.
-  # juvenile_total is used first, by reconstruct_from_total.
   redundant_columns: ["prior_offenses", "age_in_months", "juvenile_total"]
 
 preprocessing:
-  # sex and c_charge_degree have two levels each: one-hot is exact, target encoding adds nothing.
-  encoder: "onehot"                                 # onehot | ordinal | count | target
-  # Trees ignore feature scale. Use "standard" for logistic_regression.
-  scaler: "none"                                    # none | standard | minmax | robust
+  encoder: "target"                                 # onehot | ordinal | count | target
+  scaler: "robust"                                  # none | standard | minmax | robust
   numeric_features: ["age", "juv_fel_count", "juv_misd_count", "juv_other_count", "priors_count"]
-  categorical_features: ["sex", "c_charge_degree"]
-  # Each gets a <col>_was_missing flag: 1 where the value was not recorded (empty or a placeholder
-  # token). Values removed later by a validity rule are imputed but not flagged: a sentinel code
-  # is a different mechanism from a blank. Not-recorded rows reoffend at a different rate
-  # (priors_count: 35% vs 46%; c_charge_degree: 61% vs 45%), so the flag carries signal.
-  missing_indicator_sources: ["priors_count", "c_charge_degree"]
-  random_state: 42                                  # target encoder's internal folds (encoder: target only)
+  categorical_features: ["sex", "age_cat", "c_charge_degree"]
+  mnar_indicator_sources: ["priors_count", "c_charge_degree"]   # get a <col>_was_missing flag
+  random_state: 42                                  # target encoder's internal folds
   imputation:
     numeric_strategy: "median"
     categorical_strategy: "most_frequent"
 
 model:
-  type: "random_forest"     # dummy | logistic_regression | decision_tree | random_forest | oblique_random_forest | adaboost
+  type: "naive_bayes"  # dummy | logistic_regression | naive_bayes | decision_tree | random_forest | oblique_random_forest | adaboost | gradient_boosting | hist_gradient_boosting
   params:
-    n_estimators: 200       # more trees never overfit, they only cost time
-    random_state: 42
-    n_jobs: -1              # -1 = all CPU cores
-  # Other models' params, to swap in:
-  # decision_tree:          {random_state: 42}
-  # logistic_regression:    {max_iter: 2000}
+    {}
+  # Other models' params, to swap in. class_weight "balanced" weights each class by 1 / its frequency
+  # (GradientBoostingClassifier and GaussianNB have no class_weight).
+  # logistic_regression:    {max_iter: 2000, class_weight: balanced}
+  # naive_bayes:            {}
+  # decision_tree:          {random_state: 42, class_weight: balanced}
+  # random_forest:          {n_estimators: 200, random_state: 42, n_jobs: -1, class_weight: balanced}
   # oblique_random_forest:  {n_estimators: 200, n_components: 10, random_state: 42, n_jobs: -1}
   # adaboost:               {max_depth: 1, n_estimators: 200, learning_rate: 1.0, random_state: 42}
+  # hist_gradient_boosting: {random_state: 42, class_weight: balanced}
 
 tuning:
   enabled: true
@@ -107,8 +84,6 @@ tuning:
   # Keys are Pipeline parameter names. Types: int / float (low, high, log) or categorical (choices).
   # Ensembles take minutes per run: use a small n_trials while testing.
   search_spaces:
-    logistic_regression:                            # needs preprocessing.scaler: "standard"
-      model__C: {type: float, low: 0.001, high: 100.0, log: true}   # inverse L2 strength
     decision_tree:
       model__max_depth: {type: int, low: 1, high: 20}
       model__min_samples_leaf: {type: int, low: 1, high: 200, log: true}
@@ -120,11 +95,26 @@ tuning:
     oblique_random_forest:
       model__estimator__tree__max_depth: {type: int, low: 2, high: 30}
       model__estimator__tree__min_samples_leaf: {type: int, low: 1, high: 200, log: true}
-      model__estimator__project__n_components: {type: int, low: 3, high: 10}   # <= number of features (11 with onehot)
+      model__estimator__project__n_components: {type: int, low: 3, high: 10}   # <= number of features
     adaboost:
       model__estimator__max_depth: {type: int, low: 1, high: 8}
       model__n_estimators: {type: int, low: 25, high: 400, log: true}
       model__learning_rate: {type: float, low: 0.01, high: 1.0, log: true}
+    gradient_boosting:
+      model__n_estimators: {type: int, low: 25, high: 500, log: true}
+      model__learning_rate: {type: float, low: 0.01, high: 0.5, log: true}
+      model__max_depth: {type: int, low: 1, high: 6}
+      model__min_samples_leaf: {type: int, low: 1, high: 200, log: true}
+      model__subsample: {type: float, low: 0.5, high: 1.0}
+    hist_gradient_boosting:
+      model__max_iter: {type: int, low: 25, high: 500, log: true}
+      model__learning_rate: {type: float, low: 0.01, high: 0.5, log: true}
+      model__max_leaf_nodes: {type: int, low: 2, high: 63, log: true}
+      model__min_samples_leaf: {type: int, low: 5, high: 200, log: true}
+      model__l2_regularization: {type: float, low: 0.000001, high: 10.0, log: true}
+    naive_bayes:
+      model__var_smoothing: {type: float, low: 0.000000000001, high: 0.1, log: true}
 
 output:
   results_dir: "results"
+  scoreboard: "results/runs.csv"
