@@ -159,6 +159,81 @@ only; the locked test set is still unused. Accuracy and F1 use a 0.5 threshold.
   (-0.010, p = 0.015) and Naive Bayes (-0.023, p = 0.003) are significantly
   lower; Decision Tree is borderline (-0.010, p = 0.096).
 
+Week 9
+Dummy: Train ROC_AUC: 0.500
+       Test ROC_AUC:  0.500 +- 0.000
+       Test accuracy: 0.549
+                    F1_score: 0: 0.71
+                              1: 0.00
+
+LogisticRegression: Train ROC_AUC: 0.717
+                    Test ROC_AUC:  0.716 +- 0.011
+                    Test accuracy: 0.667
+                    F1_score: 0: 0.69
+                              1: 0.64
+
+Naive Bayes: Train ROC_AUC: 0.709
+             Test ROC_AUC:  0.708 +- 0.013
+             Test accuracy: 0.631
+                    F1_score: 0: 0.73
+                              1: 0.41
+
+Decision Tree: Train ROC_AUC: 0.733
+               Test ROC_AUC:  0.718 +- 0.014
+               Test accuracy: 0.670
+                    F1_score: 0: 0.71
+                              1: 0.62
+
+Random Forests: Train ROC_AUC: 0.737
+                Test ROC_AUC:  0.724 +- 0.013
+                Test accuracy: 0.669
+                    F1_score: 0: 0.70
+                              1: 0.63
+
+AdaBoost: Train ROC_AUC: 0.735
+          Test ROC_AUC:  0.723 +- 0.013
+          Test accuracy: 0.679
+                    F1_score: 0: 0.73
+                              1: 0.61
+
+Oblique Random Forests: Train ROC_AUC: 0.738
+                        Test ROC_AUC:  0.724 +- 0.012
+                        Test accuracy: 0.678
+                    F1_score: 0: 0.73
+                              1: 0.61
+
+Hist Gradient Boosting: Train ROC_AUC: 0.733
+                        Test ROC_AUC:  0.725 +- 0.013
+                        Test accuracy: 0.673
+                    F1_score: 0: 0.70
+                              1: 0.65
+
+Gradient Boosting: Train ROC_AUC: 0.731
+                   Test ROC_AUC:  0.726 +- 0.013
+                   Test accuracy: 0.681
+                    F1_score: 0: 0.73
+                              1: 0.61
+
+XGBoost: Train ROC_AUC: 0.731
+         Test ROC_AUC:  0.725 +- 0.012
+         Test accuracy: 0.680
+                    F1_score: 0: 0.73
+                              1: 0.62
+
+Note on Week 9 (same setup as Week 8; locked test set still unused):
+- New: XGBoost and a feature-selection step (a feature is kept if enough of
+  a random forest, gradient boosting and an L1 logistic regression vote for
+  it). It kept only `age` and `priors_count` in every model, and scores
+  barely moved (about -0.003 vs Week 8), so the other features add little.
+- Best model: Gradient Boosting (0.726). It has the highest ROC AUC and
+  accuracy (0.681) of all models, and the smallest train-test gap (+0.005)
+  and lowest FPR for African-American defendants (0.29) of the ensembles.
+  The other ensembles are tied with it (p > 0.2); Decision Tree, Logistic
+  Regression and Naive Bayes are significantly worse (p < 0.01).
+- Fairness: every model has a higher FPR for African-American than for
+  Caucasian defendants (Gradient Boosting 0.29 vs 0.16), but a smaller gap
+  than COMPAS's own score (0.45 vs 0.23).
+
 
 This is the **starting point** for your semester project: a small but *complete* predictive pipeline -- every piece a real project needs (entry point, config, data loading, preprocessing, model, evaluation), just kept as simple as possible for now.
 
