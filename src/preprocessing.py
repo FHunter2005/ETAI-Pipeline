@@ -37,14 +37,18 @@ def flag_invalid_values(df: pd.DataFrame, rules: dict) -> pd.DataFrame:
 
 
 def _canonicalize_categories(df: pd.DataFrame, columns_and_maps: dict, placeholder_tokens: set) -> pd.DataFrame:
+    """
+    Every text column: surrounding spaces are stripped and placeholder tokens become NaN.
+    Columns listed in `columns_and_maps` also get their spellings mapped to one canonical form.
+    """
     out = df.copy()
-    for col, mapping in columns_and_maps.items():
-        if col not in out.columns:
-            continue
+    text_columns = [c for c in out.columns if not pd.api.types.is_numeric_dtype(out[c])]
+    for col in text_columns:
         cleaned = out[col].astype(str).str.strip()
-        lowered = cleaned.str.lower()
-        out[col] = lowered.map(mapping).fillna(cleaned)
-        out.loc[out[col].astype(str).str.strip().isin(placeholder_tokens), col] = np.nan
+        mapping = columns_and_maps.get(col)
+        if mapping:
+            cleaned = cleaned.str.lower().map(mapping).fillna(cleaned)
+        out[col] = cleaned.astype(object).where(~cleaned.isin(placeholder_tokens), np.nan)
     return out
 
 
@@ -91,16 +95,18 @@ def add_missingness_indicators(df: pd.DataFrame, mnar_indicator_sources: list) -
 def split_features_target(df: pd.DataFrame, data_config: dict, mnar_indicator_sources: list):
     """
     Returns (X, y, extras). `extras` holds the columns kept out of the features for auditing
-    (the sensitive attribute and COMPAS's own score). On label-free data `y` is None.
+    (the sensitive attribute and, if `data_config["reference_score"]` is set, an existing
+    score to compare the model with). On label-free data `y` is None.
     """
     target = data_config["target"]
     sensitive_attr = data_config["sensitive_attr"]
     drop_columns = data_config.get("drop_columns", [])
+    reference_column = (data_config.get("reference_score") or {}).get("column")
 
     df = add_missingness_indicators(df, mnar_indicator_sources)
     y = df[target] if target in df.columns else None
 
-    extras_cols = [c for c in [sensitive_attr, "score_text"] if c in df.columns]
+    extras_cols = [c for c in [sensitive_attr, reference_column] if c in df.columns]
     extras = df[extras_cols].copy() if extras_cols else None
 
     always_drop = set(drop_columns) | {target, sensitive_attr}

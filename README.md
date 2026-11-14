@@ -235,6 +235,17 @@ Note on Week 9 (same setup as Week 8; locked test set still unused):
   than COMPAS's own score (0.45 vs 0.23).
 
 
+Week 10 (class notebook 09, "Beyond COMPAS", option A: Adult income)
+New dataset, same code: `python main.py config_adult.yaml`. COMPAS (`python main.py`)
+gives exactly the same numbers as in Week 9. Details in the "Beyond COMPAS" section below.
+
+XGBoost (default hyperparameters): Train ROC_AUC: 0.940
+                                   Test ROC_AUC:  0.913 +- 0.016
+                                   Test accuracy: 0.864
+                    F1_score: 0: 0.91
+                              1: 0.69
+
+
 This is the **starting point** for your semester project: a small but *complete* predictive pipeline -- every piece a real project needs (entry point, config, data loading, preprocessing, model, evaluation), just kept as simple as possible for now.
 
 The task: predict two-year recidivism using ProPublica's COMPAS
@@ -249,19 +260,27 @@ go on.
 
 ```
 .
-├── main.py                # entry point: run the whole pipeline
-├── config.yaml             # all tunable settings live here
+├── main.py                # entry point: run the whole pipeline (python main.py [config file])
+├── compare_runs.py         # corrected paired t-test between the runs of a scoreboard
+├── config.yaml             # all tunable settings live here (COMPAS)
+├── config_adult.yaml       # the same pipeline on the Adult income data
 ├── requirements.txt
 ├── src/
 │   ├── data.py             # loading
 │   ├── preprocessing.py    # cleaning + train/test split
 │   ├── model.py             # model construction
 │   ├── evaluate.py         # accuracy metrics + fairness check
-│   └── results.py          # saves each run's report to disk
+│   ├── tuning.py           # Optuna tuning + nested cross-validation
+│   └── results.py          # saves each run's report, scoreboard and predictions to disk
 ├── results/                # created automatically -- one file per run (not tracked in git)
+├── results_adult/          # same, for config_adult.yaml (not tracked in git)
+├── predictions/
+│   └── adult_new_predictions.csv   # id, probability, prediction for data/adult_new.csv
 └── data/
     ├── compas_two_year_recidivism.csv
-    └── README.md            # problem description + full data dictionary
+    ├── README.md            # problem description + full data dictionary
+    ├── adult_train.csv, adult_new.csv
+    └── ADULT_README.md      # Adult column descriptions
 ```
 
 ## Pipeline progress
@@ -271,6 +290,98 @@ This table is updated after each practical class, so you can always see what cha
 | Week | Practical class focus | Added to the pipeline |
 |------|------------------------|------------------------|
 | 2 | Introduction & baseline pipeline | Initial version: project structure, a single naive train/test split (no cross-validation), minimal preprocessing (drop rows with missing values, one-hot encode categoricals), logistic regression baseline, a first (deliberately simple) fairness check comparing our model's and COMPAS's own false-positive rate by race, train-vs-test accuracy reporting (to start spotting overfitting), and each run's full report saved automatically to `results/` |
+| 10 (notebook 09) | Beyond COMPAS, option A: new data | The pipeline runs on a second dataset (Adult income) with its own config: `main.py` takes the config file as an argument, placeholder cleaning covers every text column, the fairness report no longer needs COMPAS's score, and the final model predicts a label-free file (`predictions/adult_new_predictions.csv`). See "Beyond COMPAS" below |
+
+## Beyond COMPAS (option A: Adult income)
+
+Same pipeline, new data: does this person earn more than 50,000 USD a year?
+(`data/adult_train.csv`, 6,000 people, 24% earn more; see `data/ADULT_README.md`.)
+
+### How to run
+
+```bash
+python main.py                      # COMPAS, as before (config.yaml)
+python main.py config_adult.yaml    # Adult income
+python compare_runs.py config_adult.yaml   # corrected paired t-test between the runs in the scoreboard
+```
+
+`config_adult.yaml` writes its reports and scoreboard to `results_adult/`, and the predictions
+for the 2,000 new people (`data/adult_new.csv`) to `predictions/adult_new_predictions.csv`
+(2,000 rows in, 2,000 rows out: `id`, `probability`, `prediction`).
+
+### Choices in the config
+
+- **Sensitive attribute:** `sex` is the one audited (never a feature). `race` is also left out of
+  the features: it is the other sensitive attribute and should not drive the prediction.
+  `relationship` (Husband / Wife) still carries part of the information in `sex`.
+- **Not features:** `id`, `fnlwgt` (a sampling weight, not a characteristic of the person) and
+  `education` (same information as `education_num`, which keeps the order).
+- **Missing values:** `?` becomes a real missing value. `occupation` gets a `_was_missing` flag,
+  because the people with unknown workclass / occupation earn > 50K half as often.
+  `native_country` and `v01`-`v06` are only imputed.
+- **Validity rules:** Adult's own (`age` 17-90, `hours_per_week` 1-99, capital columns >= 0).
+  `capital_gain` = 99999 is the census top code, so it stays.
+- **Encoder:** target encoding, so `native_country` (41 values, many rare) stays one column.
+- **`v01`-`v25`:** all kept as candidate features; feature selection decides.
+
+### What broke, why, and how it was fixed
+
+| What broke | Why | Fix (works for both configs) |
+|---|---|---|
+| `python main.py config_adult.yaml` still ran COMPAS | `main()` always loaded `config.yaml` | `main.py` reads the config path from the command line (default `config.yaml`) |
+| `KeyError: 'score_text'` in the fairness report | `fairness_report()` and `split_features_target()` named COMPAS's score column | The reference score is now optional and set in the config (`data.reference_score`: column, positive values, label). COMPAS sets it, Adult doesn't |
+| `?` stayed as a category in `workclass`, `occupation` and `native_country` (no error) | `_canonicalize_categories()` only touched the columns listed in `canonical_categories`, and Adult lists none | Placeholder tokens and extra spaces are cleaned in every text column; `canonical_categories` only adds the spelling maps. Check: 379 / 381 / 86 missing after cleaning |
+| 74 valid people would lose their age | COMPAS's rule `age: {min: 18}` copied to Adult | Adult has its own `validity_rules` (config only) |
+| Reports talked about reoffending and `config.yaml` | Text written for COMPAS | General wording ("true negatives predicted positive"), and the config file name comes from the argument |
+| No way to predict people without a target | The pipeline stopped at the refit | `predict_new_data()` in `main.py`: same cleaning and feature split, no rows dropped, saved by `id` (runs when the config has `data.new_path`) |
+| Runs of both problems in one scoreboard | One `output` folder | Each config has its own `output` paths |
+
+After these changes, `python main.py` on COMPAS gives exactly the same scores, confusion matrix,
+fairness table and features kept as before (checked with tuning off and with tuning on).
+
+### Results
+
+5-fold cross-validation on the development set (4,800 rows; the locked test set is unused),
+feature selection with `min_votes: 2`. Tuned runs are nested CV with 30 trials.
+p-value: corrected paired t-test against the best run, on the same folds.
+
+| Model | Tuned | ROC AUC | Accuracy | F1 (class 1) | p vs best |
+|---|---|---|---|---|---|
+| **Target** | | **>= 0.90** | **>= 0.855** | **>= 0.66** | |
+| Dummy (no model) | no | 0.500 | 0.76 | 0.00 | |
+| **XGBoost** (final) | no | **0.913 +- 0.016** | **0.864** | **0.686** | best |
+| Hist Gradient Boosting | yes | 0.912 +- 0.016 | 0.865 | 0.684 | 0.27 |
+| Gradient Boosting | no | 0.912 +- 0.016 | 0.862 | 0.676 | 0.36 |
+| Gradient Boosting | yes | 0.909 +- 0.013 | 0.859 | 0.665 | 0.19 |
+| XGBoost | yes | 0.908 +- 0.015 | 0.857 | 0.669 | 0.10 |
+| XGBoost, no feature selection | no | 0.905 +- 0.018 | 0.858 | 0.663 | 0.12 |
+| XGBoost, `scale_pos_weight: 3.2` | no | 0.911 +- 0.016 | 0.815 | 0.683 | 0.006 |
+| Hist Gradient Boosting | no | 0.903 +- 0.016 | 0.856 | 0.667 | 0.010 |
+| AdaBoost | no | 0.903 +- 0.016 | 0.850 | 0.653 | 0.001 |
+| Logistic Regression | no | 0.896 +- 0.015 | 0.847 | 0.640 | 0.004 |
+| Oblique Random Forest | no | 0.896 +- 0.016 | 0.854 | 0.659 | < 0.001 |
+| Random Forest | no | 0.891 +- 0.015 | 0.841 | 0.633 | < 0.001 |
+| Naive Bayes | no | 0.876 +- 0.013 | 0.801 | 0.433 | < 0.001 |
+| Decision Tree | no | 0.725 +- 0.024 | 0.803 | 0.583 | < 0.001 |
+
+- **Final model:** XGBoost with the hyperparameters in `config_adult.yaml` (tuning off). It
+  reaches the three targets in the same run. The tuned boosting models reach them too, but
+  tuning did not improve on the defaults (differences inside the fold noise, p >= 0.10), so the
+  simpler run is kept.
+- **Features kept (8 of 36):** `age`, `education_num`, `capital_gain`, `capital_loss`,
+  `hours_per_week`, `marital_status`, `occupation`, `relationship`. **No `v` column is kept**,
+  and neither are `workclass`, `native_country` or the `occupation_was_missing` flag.
+- **Fairness (sex):** false positive rate 0.08 for men and 0.03 for women.
+- **Predictions:** 2,000 rows, 19.4% predicted to earn > 50K.
+
+The hardest assumption to find was the `?` placeholder, because nothing crashed: the cleaning
+ran, the model trained, and `?` was simply treated as one more category. Only the
+`value_counts(dropna=False)` check showed it. The fairness report was the opposite: it crashed
+at once, so it was easy to find. What got the pipeline to the targets was the model family
+(only boosted trees pass 0.90 ROC AUC) together with feature selection, which removes the 25
+undocumented `v` columns (0.905 -> 0.913 for XGBoost). Weighting the classes shows why the
+three targets are asked together: it raises recall from 0.62 to 0.83 but drops accuracy to
+0.815, below the target.
 
 ## Environment setup
 

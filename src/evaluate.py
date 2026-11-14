@@ -81,28 +81,35 @@ def oof_classification_report(y_true, oof_proba, threshold: float = 0.5) -> str:
     return text
 
 
-def fairness_report(y_true, oof_proba, extras: pd.DataFrame, sensitive_attr: str = "race",
-                    threshold: float = 0.5) -> str:
+def fairness_report(y_true, oof_proba, extras: pd.DataFrame, sensitive_attr: str,
+                    reference_score: dict = None, threshold: float = 0.5) -> str:
     """
-    False positive rate (share of people who did not reoffend but were predicted to) per
-    group of `sensitive_attr`, for the model's predictions (proba >= `threshold`) and for COMPAS's own score
-    ("Medium" or "High" counts as predicted to reoffend), on the same rows; rows whose
-    `score_text` is unknown (NaN after cleaning) are left out of COMPAS's rates only.
+    False positive rate (share of the true negatives that were predicted positive) per group
+    of `sensitive_attr`, for the model's predictions (proba >= `threshold`).
+
+    `reference_score` (optional) compares the model with an existing score on the same rows:
+    {"column": a column of `extras`, "positive": the values that count as a positive
+    prediction, "label": its name in the report}. Rows where that score is unknown (NaN after
+    cleaning) are left out of its rates only.
     Rows with an unknown group are reported as "unknown". A simple check, not a full audit.
     """
     df = extras.copy()
     df[sensitive_attr] = df[sensitive_attr].astype(object).fillna("unknown")
     df["y_true"] = pd.Series(y_true).values
     df["y_pred_model"] = (np.asarray(oof_proba) >= threshold).astype(int)
-    df["y_pred_compas"] = df["score_text"].map({"Low": 0, "Medium": 1, "High": 1})
+    predictions = [("Our model", "y_pred_model")]
+    if reference_score:
+        column = df[reference_score["column"]]
+        df["y_pred_reference"] = column.isin(reference_score["positive"]).astype(float).where(column.notna())
+        predictions.append((reference_score.get("label", reference_score["column"]), "y_pred_reference"))
 
     lines = [
         f"False positive rate by {sensitive_attr} (development set, out-of-fold)",
-        "(share of people who did NOT reoffend, but were predicted to;",
-        " n_neg = number of people in the group who did not reoffend)",
+        "(share of the true negatives that were predicted positive;",
+        " n_neg = number of true negatives in the group)",
         "",
     ]
-    for label, col in [("Our model", "y_pred_model"), ("COMPAS's own score", "y_pred_compas")]:
+    for label, col in predictions:
         lines.append(f"  {label}:")
         for group, g in df.groupby(sensitive_attr):
             negatives = g[(g["y_true"] == 0) & g[col].notna()]

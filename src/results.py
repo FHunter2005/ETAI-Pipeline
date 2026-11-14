@@ -13,6 +13,18 @@ def save_scores(path: str, row: dict) -> pd.DataFrame:
     runs.to_csv(path, index=False)
     return runs
 
+def save_predictions(path: str, ids, proba, threshold: float = 0.5) -> pd.DataFrame:
+    """
+    Writes one row per id to the CSV at `path`: the probability of the positive class and the
+    0/1 prediction (proba >= `threshold`). Returns the table.
+    """
+    predictions = pd.DataFrame({"id": pd.Series(ids).values, "probability": proba,
+                                "prediction": (proba >= threshold).astype(int)})
+    os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+    predictions.to_csv(path, index=False)
+    return predictions
+
+
 def save_run(results_dir: str, run: str, config: dict, report_text: str, model=None) -> str:
     """
     Writes the run's settings and full report to `results_dir/run_<run>.txt` and, if given,
@@ -30,6 +42,7 @@ def save_run(results_dir: str, run: str, config: dict, report_text: str, model=N
                    f"random_state={tuning['random_state']}" if tuning.get("enabled") else "off")
     header = (
         f"Run: {timestamp}\n"
+        f"Data: {config['data']['path']}  target={config['data']['target']}\n"
         f"Model: {config['model']['type']}  params={config['model'].get('params')}\n"
         f"Preprocessing: encoder={config['preprocessing']['encoder']}  "
         f"scaler={config['preprocessing']['scaler']}\n"

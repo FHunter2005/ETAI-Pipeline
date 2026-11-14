@@ -1,14 +1,16 @@
 """
-Entry point: `python main.py`.
+Entry point: `python main.py [config file]` (default: config.yaml), e.g. `python main.py config_adult.yaml`.
 
 load config -> load and clean data -> drop duplicate rows (training only) -> features/target
 -> lock the test set -> cross-validate the pipeline on the development set (several metrics,
 and the no-model floor on the same folds
 -> [if tuning is enabled: nested CV of the tuning procedure, then tuning on all development rows]
 -> out-of-fold reports -> refit on all development rows -> scoreboard + full report
+-> [if the config has data.new_path: predictions for those label-free rows, saved by id]
 """
 import atexit
 import shutil
+import sys
 import tempfile
 from datetime import datetime
 
@@ -22,7 +24,7 @@ from src.model import build_pipeline
 from src.evaluate import (build_scorers, cross_validate_pipeline, cv_report, oof_classification_report,
                           fairness_report)
 from src.tuning import tune_pipeline, nested_cross_validate, tuning_report
-from src.results import save_run, save_scores
+from src.results import save_run, save_scores, save_predictions
 
 
 def load_config(path: str = "config.yaml") -> dict:
@@ -30,8 +32,24 @@ def load_config(path: str = "config.yaml") -> dict:
         return yaml.safe_load(f)
 
 
+def predict_new_data(pipeline, config: dict):
+    """
+    Predicts the label-free file `data.new_path` with the fitted `pipeline`: same cleaning
+    and feature split as the training data, but no rows are dropped (every row needs a
+    prediction). Saves id, probability and 0/1 prediction to `output.predictions`.
+    """
+    df_new = clean_dataset(load_data(config["data"]["new_path"]), config["diagnostics"])
+    X_new, _, _ = split_features_target(df_new, config["data"],
+                                        config["preprocessing"].get("mnar_indicator_sources", []))
+    proba = pipeline.predict_proba(X_new)[:, 1]
+    path = config.get("output", {}).get("predictions", "results/predictions.csv")
+    predictions = save_predictions(path, df_new[config["diagnostics"]["id_column"]], proba)
+    return path, predictions
+
+
 def main():
-    config = load_config()
+    config_path = sys.argv[1] if len(sys.argv) > 1 else "config.yaml"
+    config = load_config(config_path)
     run = datetime.now().strftime("%Y%m%d_%H%M%S")
     model_type = config["model"]["type"]
 
@@ -72,10 +90,10 @@ def main():
     fold_scores, oof_proba = cross_validate_pipeline(pipeline, X_dev, y_dev, cv, scorers, selection_metric, n_jobs)
     floor, untuned = floor_scores["validation"].mean(), fold_scores["validation"].mean()
 
-    print("\nDefault hyperparameters (config.yaml)")
+    print(f"\nDefault hyperparameters ({config_path})")
     print(f"  {selection_metric}: {untuned:.3f} ± {fold_scores['validation'].std(ddof=1):.3f}   "
           f"train-validation gap: {fold_scores['gap'].mean():+.3f}   no-model floor: {floor:.3f}")
-    report = (f"Hyperparameters from config.yaml: {config['model'].get('params')}\n\n"
+    report = (f"Hyperparameters from {config_path}: {config['model'].get('params')}\n\n"
               + cv_report(fold_scores, metrics, selection_metric, "Cross-validation")
               + f"\n\nNo-model floor (dummy, same folds): {selection_metric} = {floor:.3f}")
     final_scores = fold_scores
@@ -85,7 +103,7 @@ def main():
     if tuning_enabled:
         search_spaces = tuning_config.get("search_spaces") or {}
         if model_type not in search_spaces:
-            raise ValueError(f"tuning is enabled but config.yaml has no tuning.search_spaces for "
+            raise ValueError(f"tuning is enabled but {config_path} has no tuning.search_spaces for "
                              f"'{model_type}'. Add one, or set tuning.enabled: false.")
         search_space = dict(search_spaces[model_type])
         if selection_enabled:
@@ -119,7 +137,8 @@ def main():
     for name in metrics:
         print(f"  {name:<18s} {final_scores[name].mean():.3f} ± {final_scores[name].std(ddof=1):.3f}")
     report += "\n\n" + oof_classification_report(y_dev, oof_proba)
-    report += "\n" + fairness_report(y_dev, oof_proba, extras_dev, sensitive_attr=config["data"]["sensitive_attr"])
+    report += "\n" + fairness_report(y_dev, oof_proba, extras_dev, sensitive_attr=config["data"]["sensitive_attr"],
+                                     reference_score=config["data"].get("reference_score"))
 
     pipeline.fit(X_dev, y_dev)
     refit = f"Final model: {model_type} refit on all {len(X_dev)} development rows."
@@ -127,6 +146,10 @@ def main():
         all_features = pipeline.named_steps["prep"].get_feature_names_out()
         kept = pipeline.named_steps["select"].get_feature_names_out(all_features)
         refit += f"\nFeatures kept: {len(kept)} of {len(all_features)}: {', '.join(kept)}"
+    if config["data"].get("new_path"):
+        predictions_path, predictions = predict_new_data(pipeline, config)
+        refit += (f"\nPredictions for {config['data']['new_path']}: {len(predictions)} rows, "
+                  f"{predictions['prediction'].mean():.1%} predicted positive -> {predictions_path}")
     report += "\n" + refit + "\n"
 
     row = {"run": run, "data": config["data"]["path"], "model": model_type, "tuned": tuning_enabled,
